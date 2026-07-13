@@ -1,0 +1,71 @@
+name: Build Docker Image 
+
+on:
+  push:
+    branches:
+      - main
+    
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/my-angular-app
+  TAG: ${{ github.sha }}
+
+jobs:
+  build:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Run Docker Build
+        run: |
+          docker build . -t $REGISTRY/$IMAGE_NAME:$TAG ./frontend/my-angular-app
+          echo "Docker build completed successfully!"
+          docker images
+          docker push $REGISTRY/$IMAGE_NAME:$TAG
+
+  deploy:
+    name: Deploy to Server
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
+          chmod 600 key.pem
+
+      - name: Deploy to EC2
+        run: |
+          ssh -i key.pem -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+
+            # Clean Docker
+            sudo docker system prune -af
+            sudo docker volume prune -f
+            
+            # Pull latest image
+            sudo docker pull $REGISTRY/$IMAGE_NAME:$TAG
+
+            # Stop and remove old container (ignore errors)
+            sudo docker rm -f demo-app-angular || true
+            
+            # Run new container
+            sudo docker run -d \
+              --name demo-app-angular \
+              -p 4200:4200 \
+              $REGISTRY/$IMAGE_NAME:$TAG
+
+            sudo docker ps -a
+            echo "Deployment completed successfully!"
+            sudo docker images
+          EOF
