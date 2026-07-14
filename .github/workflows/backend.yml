@@ -1,52 +1,110 @@
-name: Build and Push Image
+name: Build, Push and Deploy 3-Tier Application
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
+      
 
 env:
-  IMAGE_NAME: ghcr.io/riyabhunia2024-tech/springboot-app
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ${{ github.repository_owner }}/springboot-docker-app
+  FRONTEND_IMAGE: ${{ github.repository_owner }}/angular-docker-app
+  DATABASE_IMAGE: ${{ github.repository_owner }}/mysql-docker-db
+  TAG: latest
 
 jobs:
-  build-and-push:
+  build-backend:
+    name: Build and Push Backend
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Login to GHCR
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login ${{ env.REGISTRY }} -u "${{ github.actor }}" --password-stdin
+      - name: Build and Push Backend Image
+        working-directory: ./backend
+        run: |
+          docker build -t $REGISTRY/$BACKEND_IMAGE:$TAG .
+          docker push $REGISTRY/$BACKEND_IMAGE:$TAG
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          file: ./backend/Dockerfile
-          push: true
-          tags: ${{ env.IMAGE_NAME }}:latest
- 
-  deploy:
-    needs: build-and-push
+  build-frontend:
+    name: Build and Push Frontend
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
+      packages: write
     steps:
-      - name: Deploy to EC2 over SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ubuntu
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            sudo docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
-            sudo docker pull ghcr.io/riyabhunia2024-tech/my-springboot-app:latest
-            sudo docker stop springboot-app || true
-            sudo docker rm springboot-app || true
-            sudo docker run -d -p 8080:8080 --name springboot-app ghcr.io/riyabhunia2024-tech/my-springboot-app:latest
+      - uses: actions/checkout@v4
+      - name: Login to GHCR
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login ${{ env.REGISTRY }} -u "${{ github.actor }}" --password-stdin
+      - name: Build and Push Frontend Image
+        working-directory: ./frontend
+        run: |
+          docker build -t $REGISTRY/$FRONTEND_IMAGE:$TAG .
+          docker push $REGISTRY/$FRONTEND_IMAGE:$TAG
+
+  build-database:
+    name: Build and Push Database
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to GHCR
+        run: echo "${{ secrets.GHCR_PAT }}" | docker login ${{ env.REGISTRY }} -u "${{ github.actor }}" --password-stdin
+      - name: Build and Push Database Image
+        working-directory: ./database
+        run: |
+          docker build -t $REGISTRY/$DATABASE_IMAGE:$TAG .
+          docker push $REGISTRY/$DATABASE_IMAGE:$TAG
+
+  deploy:
+    name: Deploy to EC2
+    needs: [build-backend, build-frontend, build-database]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > key.pem
+          chmod 600 key.pem
+
+      - name: Deploy Application
+        run: |
+          ssh -i key.pem -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << EOF
+
+            echo "${{ secrets.GHCR_PAT }}" | sudo docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+            sudo docker system prune -af
+            sudo docker network inspect app-network >/dev/null 2>&1 || sudo docker network create app-network
+
+            sudo docker pull $REGISTRY/$BACKEND_IMAGE:$TAG
+            sudo docker pull $REGISTRY/$FRONTEND_IMAGE:$TAG
+            sudo docker pull $REGISTRY/$DATABASE_IMAGE:$TAG
+
+            # sudo docker stop mysql-db springboot-backend angular-frontend || true
+            sudo docker rm -f mysql-db springboot-backend angular-frontend || true
+
+            sudo docker run --name mysql-db --network app-network \
+              -e MYSQL_ROOT_PASSWORD=${{ secrets.DB_ROOT_PASSWORD }} \
+              -e MYSQL_DATABASE=appdb \
+              -e MYSQL_USER=${{ secrets.DB_USER }} \
+              -e MYSQL_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              -v db_data:/var/lib/mysql \
+              $REGISTRY/$DATABASE_IMAGE:$TAG
+
+            sudo docker run -d --name springboot-backend --network app-network \
+              -e SPRING_DATASOURCE_URL=jdbc:mysql://mysql-db:3306/appdb \
+              -e SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USER }} \
+              -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              $REGISTRY/$BACKEND_IMAGE:$TAG
+
+            sudo docker run -d --name angular-frontend --network app-network \
+              -p 80:80 \
+              $REGISTRY/$FRONTEND_IMAGE:$TAG
+
+          EOF
