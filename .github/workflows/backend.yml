@@ -38,7 +38,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "Docker-compose.yml"
+          source: "docker-compose.yml"
           target: "/home/ubuntu/app"
 
       - name: SSH and deploy
@@ -51,6 +51,6 @@ jobs:
             cd /home/ubuntu/app
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             export MYSQL_ROOT_PASSWORD="${{ secrets.MYSQL_ROOT_PASSWORD }}"
-            docker compose pull
-            docker compose down
-            docker compose up -d
+            sudo docker compose pull
+            sudo docker compose down
+            sudo docker compose up -d
