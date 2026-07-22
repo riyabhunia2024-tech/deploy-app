@@ -16,4 +16,5 @@ CREATE TABLE IF NOT EXISTS students (
 INSERT INTO students (name, email, course)
 VALUES
 ('Riya', 'riya@gmail.com', 'Computer Science'),
-('Rahul', 'rahul@gmail.com', 'DevOps');
+('Rahul', 'rahul@gmail.com', 'DevOps'),
+('Amit','ECE','amit@gmail.com');

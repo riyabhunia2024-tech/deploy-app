@@ -1,0 +1,5 @@
+<!-- student-list.component.html -->
+<button (click)="loadStudents()">Show Students</button>
+<ul>
+  <li *ngFor="let s of students">{{ s.name }} — {{ s.email }} — {{ s.course }}</li>
+</ul>

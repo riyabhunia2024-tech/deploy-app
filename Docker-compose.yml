@@ -1,0 +1,40 @@
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: studentdb
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - app-net
+
+  backend:
+    image: ghcr.io/riyabhunia2024-tech/backend:latest
+    restart: always
+    depends_on:
+      - mysql
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/studentdb
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    networks:
+      - app-net
+
+  nginx:
+    image: ghcr.io/riyabhunia2024-tech/frontend:latest
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    networks:
+      - app-net
+
+networks:
+  app-net:
+
+volumes:
+  mysql_data:

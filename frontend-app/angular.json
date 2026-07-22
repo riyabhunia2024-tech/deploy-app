@@ -3,11 +3,11 @@
   "version": 1,
   "cli": {
     "packageManager": "npm",
-    "analytics": "d8abb545-f10d-4fef-bd9c-26be0b5ff53d"
+    "analytics": false
   },
   "newProjectRoot": "projects",
   "projects": {
-    "my-angular-app": {
+    "frontend-app": {
       "projectType": "application",
       "schematics": {},
       "root": "",
@@ -54,13 +54,17 @@
           "defaultConfiguration": "production"
         },
         "serve": {
+          
           "builder": "@angular/build:dev-server",
+          "options": {
+              "proxyConfig": "proxy.conf.json"
+            },
           "configurations": {
             "production": {
-              "buildTarget": "my-angular-app:build:production"
+              "buildTarget": "frontend-app:build:production"
             },
             "development": {
-              "buildTarget": "my-angular-app:build:development"
+              "buildTarget": "frontend-app:build:development"
             }
           },
           "defaultConfiguration": "development"
